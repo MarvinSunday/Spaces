@@ -1,6 +1,6 @@
 # Monad Spaces
 
-A governance-agnostic DAO framework on Monad — an original, from-scratch on-chain governance protocol where a DAO's treasury and its governance rules are kept as two separate, swappable pieces, rather than locked together.
+A governance-agnostic DAO framework — an original, from-scratch on-chain governance protocol where a DAO's treasury and its governance rules are kept as two separate, swappable pieces, rather than locked together.
 
 Not a fork of OpenZeppelin Governor or any existing framework. Every module — proposal lifecycle, voting, quorum/approval math, timelocks — is implemented from scratch.
 
@@ -79,7 +79,7 @@ Two-step process — deploy the factory once, then create as many DAOs through i
 
 ```bash
 forge script script/DeployDAOFactory.s.sol:DeployDAOFactory \
-  --rpc-url https://testnet-rpc.monad.xyz \
+  --rpc-url <network-rpc-link> \
   --account <your-account> \
   --broadcast
 ```
@@ -92,7 +92,7 @@ export INITIAL_SUPPLY=1000000
 export MAX_SUPPLY=10000000
 
 forge script script/CreateDAO.s.sol:CreateDAO \
-  --rpc-url https://testnet-rpc.monad.xyz \
+  --rpc-url <network-rpc-link> \
   --account <your-account> \
   --broadcast
 ```
@@ -105,11 +105,7 @@ export GOVERNANCE_ADDRESS=0x...
 export OPERATOR_ADDRESS=<bot or admin wallet authorized to trigger distributions>
 
 forge script script/DeployWelcomeDistributor.s.sol:DeployWelcomeDistributor \
-  --rpc-url https://testnet-rpc.monad.xyz \
+  --rpc-url <network-rpc-link> \
   --account <your-account> \
   --broadcast
 ```
-
-## Network
-
-Monad Testnet — chain ID `10143`, RPC `https://testnet-rpc.monad.xyz`, explorer `https://testnet.monadexplorer.com`.
