@@ -1,4 +1,4 @@
-# Monad Spaces
+# DAO Spaces
 
 A governance-agnostic DAO framework — an original, from-scratch on-chain governance protocol where a DAO's treasury and its governance rules are kept as two separate, swappable pieces, rather than locked together.
 
