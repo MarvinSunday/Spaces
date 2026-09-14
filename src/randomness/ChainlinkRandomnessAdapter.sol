@@ -1,37 +1,36 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { VRFConsumerBaseV2Plus } from "@chainlink/contracts/src/v0.8/vrf/dev/VRFConsumerBaseV2Plus.sol";
-import { VRFV2PlusClient } from "@chainlink/contracts/src/v0.8/vrf/dev/libraries/VRFV2PlusClient.sol";
+import { VRFV2PlusWrapperConsumerBase } from "@chainlink/contracts/src/v0.8/vrf/dev/VRFV2PlusWrapperConsumerBase.sol";
 import { IRandomnessSource } from "./IRandomnessSource.sol";
 
 /// @title ChainlinkRandomnessAdapter
 /// @author Marvin Sunday
-/// @notice Wraps Chainlink VRF v2.5 behind the shared IRandomnessSource
-///         interface.
-/// @dev Chainlink is a PUSH-based oracle, the opposite of Switchboard's
-///      pull model - the VRF coordinator calls this contract back
-///      automatically once the randomness is ready, no keeper needed.
+/// @notice Wraps Chainlink VRF v2.5's direct-funding ("pay-as-you-go")
+///         wrapper behind the shared IRandomnessSource interface.
+/// @dev Deliberately uses the wrapper/direct-funding flow instead of a
+///      pre-funded subscription. Subscriptions make sense when a contract
+///      calls VRF frequently or wants to share one funding pool across
+///      many consumers - neither applies here. SortitionGovernance calls
+///      this rarely (once per election term, not per-transaction), so
+///      maintaining a subscription that sits idle between rounds - and
+///      has to be separately created, funded, and monitored - is real
+///      operational overhead for no benefit. Direct funding pays exactly
+///      when a request happens, in native currency, no subscription setup
+///      at all: no keyHash, no subscription ID, nothing to run dry
+///      unexpectedly between rounds.
 ///
-///      The real complexity here: Chainlink generates its OWN numeric
-///      request ID when `requestRandomWords` is called, but
-///      IRandomnessSource standardizes on a caller-chosen bytes32 ID (to
-///      match Switchboard's convention). This adapter bridges the two
-///      with an internal id <-> id mapping, set up before the external
-///      call and consulted in the fulfillment callback.
-///
-///      Requires a funded Chainlink VRF subscription that this contract's
-///      address has been added to as a consumer - see Chainlink's VRF
-///      subscription manager for the network you deploy to.
+///      Still PUSH-based like the subscription flow - the wrapper calls
+///      this contract back automatically once randomness is ready, no
+///      keeper needed (unlike the Switchboard adapter).
 ///
 ///      Verified against the real, installed Chainlink contracts package
 ///      (chainlink/contracts, v1.4.0) - not written from documentation
 ///      snippets alone.
-contract ChainlinkRandomnessAdapter is IRandomnessSource, VRFConsumerBaseV2Plus {
-    bytes32 public immutable keyHash;
-    uint256 public immutable subscriptionId;
+contract ChainlinkRandomnessAdapter is IRandomnessSource, VRFV2PlusWrapperConsumerBase {
     uint16 public immutable requestConfirmations;
     uint32 public immutable callbackGasLimit;
+    uint32 public constant NUM_WORDS = 1;
 
     /// @dev Our bytes32 request ID -> Chainlink's own numeric request ID.
     mapping(bytes32 => uint256) public chainlinkRequestIdOf;
@@ -44,18 +43,22 @@ contract ChainlinkRandomnessAdapter is IRandomnessSource, VRFConsumerBaseV2Plus 
 
     error AlreadyRequested();
     error NotYetFulfilled();
+    error InsufficientPayment();
+    error RefundFailed();
 
     constructor(
-        address vrfCoordinator_,
-        bytes32 keyHash_,
-        uint256 subscriptionId_,
+        address vrfWrapper_,
         uint16 requestConfirmations_,
         uint32 callbackGasLimit_
-    ) VRFConsumerBaseV2Plus(vrfCoordinator_) {
-        keyHash = keyHash_;
-        subscriptionId = subscriptionId_;
+    ) VRFV2PlusWrapperConsumerBase(vrfWrapper_) {
         requestConfirmations = requestConfirmations_;
         callbackGasLimit = callbackGasLimit_;
+    }
+
+    /// @notice The exact native-currency payment `requestRandomness` needs
+    ///         right now - query this first so the caller sends enough.
+    function requestPrice() public view returns (uint256) {
+        return i_vrfV2PlusWrapper.calculateRequestPriceNative(callbackGasLimit, NUM_WORDS);
     }
 
     /// @inheritdoc IRandomnessSource
@@ -63,27 +66,29 @@ contract ChainlinkRandomnessAdapter is IRandomnessSource, VRFConsumerBaseV2Plus 
         if (requested[requestId]) revert AlreadyRequested();
         requested[requestId] = true;
 
-        uint256 chainlinkRequestId = s_vrfCoordinator.requestRandomWords(
-            VRFV2PlusClient.RandomWordsRequest({
-                keyHash: keyHash,
-                subId: subscriptionId,
-                requestConfirmations: requestConfirmations,
-                callbackGasLimit: callbackGasLimit,
-                numWords: 1,
-                extraArgs: VRFV2PlusClient._argsToBytes(
-                    VRFV2PlusClient.ExtraArgsV1({ nativePayment: msg.value > 0 })
-                )
-            })
+        uint256 price = requestPrice();
+        if (msg.value < price) revert InsufficientPayment();
+
+        (uint256 chainlinkRequestId, ) = requestRandomnessPayInNative(
+            callbackGasLimit,
+            requestConfirmations,
+            NUM_WORDS,
+            ""
         );
 
         chainlinkRequestIdOf[requestId] = chainlinkRequestId;
         _requestIdOfChainlinkId[chainlinkRequestId] = requestId;
+
+        if (msg.value > price) {
+            (bool ok, ) = msg.sender.call{value: msg.value - price}("");
+            if (!ok) revert RefundFailed();
+        }
     }
 
-    /// @dev Called automatically by the VRF coordinator once randomness is
+    /// @dev Called automatically by the VRF wrapper once randomness is
     ///      ready - never called directly by any other address, enforced
-    ///      by VRFConsumerBaseV2Plus's rawFulfillRandomWords wrapper.
-    function fulfillRandomWords(uint256 chainlinkRequestId, uint256[] calldata randomWords) internal override {
+    ///      by VRFV2PlusWrapperConsumerBase's rawFulfillRandomWords wrapper.
+    function fulfillRandomWords(uint256 chainlinkRequestId, uint256[] memory randomWords) internal override {
         bytes32 requestId = _requestIdOfChainlinkId[chainlinkRequestId];
         _randomnessOf[requestId] = randomWords[0];
         _fulfilled[requestId] = true;
