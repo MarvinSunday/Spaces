@@ -5,7 +5,7 @@ import "./Types.sol";
 import "./GovernanceErrors.sol";
 
 /// @title GovernanceMath
-/// @author Marvin Sunday (@MarvinSunday4 on X)
+/// @author Marvin Sunday
 /// @notice Mathematical helper library for governance calculations.
 /// @dev Contains only deterministic calculations. No storage is accessed.
 library GovernanceMath {

@@ -1,1 +1,3 @@
 @openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/
+@switchboard-xyz/on-demand-solidity/=node_modules/@switchboard-xyz/on-demand-solidity/
+@chainlink/contracts/=node_modules/@chainlink/contracts/

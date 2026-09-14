@@ -15,7 +15,7 @@ import "./GovernanceEvents.sol";
 import "../interfaces/IGovernanceToken.sol";
 
 /// @title Governance
-/// @author Marvin Sunday (@MarvinSunday4 on X)
+/// @author Marvin Sunday
 /// @notice Orchestration contract for a modular DAO governance system.
 /// @dev This contract holds no independent state beyond what it inherits from
 ///      GovernanceStorage. All proposal storage, vote receipts and governance
@@ -136,13 +136,18 @@ contract Governance is GovernanceStorage {
             revert ProposalNotActive();
         }
 
+        
         VoteReceipt storage receipt = _voteReceipts[proposalId][voter];
         if (receipt.hasVoted) revert AlreadyVoted();
+
+        receipt.hasVoted = true;
+        receipt.support = support;
 
         weight = IGovernanceToken(governanceToken).getPastVotes(
             voter,
             proposal.snapshotBlock
         );
+        receipt.weight = weight;
 
         if (support == VoteType.For) {
             proposal.forVotes += weight;
@@ -152,9 +157,6 @@ contract Governance is GovernanceStorage {
             proposal.abstainVotes += weight;
         }
 
-        receipt.hasVoted = true;
-        receipt.support = support;
-        receipt.weight = weight;
 
         emit VoteCast(voter, proposalId, support, weight, reason);
     }

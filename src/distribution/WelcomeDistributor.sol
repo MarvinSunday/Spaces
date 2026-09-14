@@ -5,7 +5,7 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 /// @title WelcomeDistributor
-/// @author Ark Team
+/// @author Marvin Sunday
 /// @notice Distributes a fixed amount of a DAO's raw GovernanceToken to new
 ///         members, one claim per address, up to a hard cap.
 /// @dev Deliberately NOT wired into DAOFactory - this is optional, per-DAO
