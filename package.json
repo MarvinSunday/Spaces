@@ -24,6 +24,7 @@
   "homepage": "https://github.com/MarvinSunday/Spaces#readme",
   "dependencies": {
     "@chainlink/contracts": "^1.4.0",
+    "@fhevm/solidity": "^0.13.3",
     "@switchboard-xyz/on-demand-solidity": "^1.1.0"
   }
 }

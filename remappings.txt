@@ -1,3 +1,6 @@
 @openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/
 @switchboard-xyz/on-demand-solidity/=node_modules/@switchboard-xyz/on-demand-solidity/
 @chainlink/contracts/=node_modules/@chainlink/contracts/
+@fhevm/solidity/=node_modules/@fhevm/solidity/
+encrypted-types/=node_modules/encrypted-types/
+forge-fhevm/=lib/forge-fhevm/src/

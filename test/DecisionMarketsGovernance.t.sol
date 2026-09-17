@@ -219,6 +219,74 @@ contract DecisionMarketsGovernanceTest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////
+                        LIQUIDITY RECLAMATION
+    //////////////////////////////////////////////////////////////*/
+
+    function test_ReclaimLiquidity_RevertsBeforeFinalization() public {
+        uint256 id = _propose(1_000 ether, 10 ether);
+        vm.expectRevert(DecisionMarketsGovernance.NotFinalized.selector);
+        gov.reclaimLiquidity(id);
+    }
+
+    function test_ReclaimLiquidity_RevertsOnDoubleReclaim() public {
+        uint256 id = _propose(1_000 ether, 10 ether);
+        vm.warp(block.timestamp + defaultConfig().tradingPeriod + 1);
+        gov.finalizeProposal(id);
+
+        gov.reclaimLiquidity(id);
+
+        vm.expectRevert(DecisionMarketsGovernance.AlreadyReclaimed.selector);
+        gov.reclaimLiquidity(id);
+    }
+
+    function test_ReclaimLiquidity_SendsRecoveredValueToProposer() public {
+        uint256 id = _propose(1_000 ether, 10 ether);
+        vm.warp(block.timestamp + defaultConfig().tradingPeriod + 1);
+        gov.finalizeProposal(id); // untouched pools, fails - still fully reclaimable
+
+        uint256 proposerBaseBefore = govToken.balanceOf(proposer);
+        uint256 proposerQuoteBefore = wmon.balanceOf(proposer);
+
+        gov.reclaimLiquidity(id);
+
+        // With no trading at all, essentially the full original seed
+        // (minus the permanently-locked MINIMUM_LIQUIDITY sliver on each
+        // pool) comes back - a large, clearly nonzero recovery, not just
+        // dust.
+        assertTrue(govToken.balanceOf(proposer) > proposerBaseBefore + 900 ether);
+        assertTrue(wmon.balanceOf(proposer) > proposerQuoteBefore + 9 ether);
+    }
+
+    function test_ReclaimLiquidity_WorksRegardlessOfPassOrFail() public {
+        // Pass-outcome scenario (mirrors test_FullLifecycle_PassWinsWhenTradedHigher).
+        uint256 id = _propose(1_000 ether, 10 ether);
+        DecisionMarketsGovernance.Proposal memory p = gov.getProposal(id);
+
+        ConditionalVault quoteVault = ConditionalVault(p.quoteVault);
+        vm.startPrank(alice);
+        wmon.deposit{value: 5 ether}();
+        wmon.approve(address(quoteVault), 5 ether);
+        quoteVault.splitTokens(5 ether);
+        ConditionalToken passQuote = ConditionalVault(p.quoteVault).passToken();
+        passQuote.approve(address(gov), 5 ether);
+        gov.trade(id, DecisionMarketsGovernance.Market.Pass, DecisionMarketsGovernance.Side.Quote, 5 ether, 0);
+        vm.stopPrank();
+
+        vm.warp(block.timestamp + defaultConfig().tradingPeriod + 1);
+        gov.finalizeProposal(id);
+
+        p = gov.getProposal(id);
+        assertTrue(p.passed);
+
+        // Reclaiming should succeed cleanly even though the pools' ratios
+        // are no longer equal, post-trade.
+        gov.reclaimLiquidity(id);
+
+        p = gov.getProposal(id);
+        assertTrue(p.liquidityReclaimed);
+    }
+
+    /*//////////////////////////////////////////////////////////////
                     GOVERNANCE-ONLY ADMIN (self-call)
     //////////////////////////////////////////////////////////////*/
 

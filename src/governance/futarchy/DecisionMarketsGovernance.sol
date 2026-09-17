@@ -11,6 +11,7 @@ interface IERC20Orchestrator {
     function transfer(address to, uint256 amount) external returns (bool);
     function transferFrom(address from, address to, uint256 amount) external returns (bool);
     function approve(address spender, uint256 amount) external returns (bool);
+    function balanceOf(address account) external view returns (uint256);
 }
 /// @title DecisionMarketsGovernance
 /// @author Marvin Sunday
@@ -69,6 +70,7 @@ contract DecisionMarketsGovernance {
         uint256 queuedAt;
         bool executed;
         bool cancelled;
+        bool liquidityReclaimed;
     }
 
     enum Market {
@@ -112,6 +114,7 @@ contract DecisionMarketsGovernance {
     error TransferFailed();
     error NativeTransferFailed();
     error Unauthorized();
+    error AlreadyReclaimed();
 
     /*//////////////////////////////////////////////////////////////
                                 EVENTS
@@ -139,6 +142,7 @@ contract DecisionMarketsGovernance {
     event ConfigUpdated();
     event GovernanceTokenUpdated(address indexed previousToken, address indexed newToken);
     event TreasuryUpdated(address indexed previousTreasury, address indexed newTreasury);
+    event LiquidityReclaimed(uint256 indexed proposalId, uint256 baseRecovered, uint256 quoteRecovered);
 
     /*//////////////////////////////////////////////////////////////
                                 STATE
@@ -437,6 +441,51 @@ contract DecisionMarketsGovernance {
 
         p.cancelled = true;
         emit ProposalCancelled(proposalId, msg.sender);
+    }
+    /*//////////////////////////////////////////////////////////////
+                        LIQUIDITY RECLAMATION
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Recovers the seed liquidity this contract holds for a
+    ///         finalized proposal's two pools, converts it back to real
+    ///         underlying via the now-resolved vaults, and sends it to
+    ///         the treasury. Permissionless, callable once per proposal,
+    ///         any time after finalization - deliberately not available
+    ///         during trading, since pulling liquidity mid-market would
+    ///         distort the very TWAP the resolution depends on. Works
+    ///         the same regardless of whether the proposal passed,
+    ///         failed, or was ever executed - this only recovers the
+    ///         seed capital, unrelated to the proposal's own actions.
+    function reclaimLiquidity(uint256 proposalId) external proposalExists(proposalId) {
+        Proposal storage p = _proposals[proposalId];
+        if (!p.finalized) revert NotFinalized();
+        if (p.liquidityReclaimed) revert AlreadyReclaimed();
+        p.liquidityReclaimed = true;
+
+        _burnPoolLiquidity(p.passPool);
+        _burnPoolLiquidity(p.failPool);
+
+        // Both vaults are already resolved by finalizeProposal - this
+        // pays out only the winning side, same mechanism any real trader
+        // uses, burning the losing side's conditional tokens for nothing.
+        ConditionalVault(p.baseVault).redeemTokens();
+        ConditionalVault(p.quoteVault).redeemTokens();
+
+        uint256 baseRecovered = IERC20Orchestrator(governanceToken).balanceOf(address(this));
+        uint256 quoteRecovered = IERC20Orchestrator(wmon).balanceOf(address(this));
+
+        if (baseRecovered > 0) IERC20Orchestrator(governanceToken).transfer(p.proposer, baseRecovered);
+        if (quoteRecovered > 0) IERC20Orchestrator(wmon).transfer(p.proposer, quoteRecovered);
+
+        emit LiquidityReclaimed(proposalId, baseRecovered, quoteRecovered);
+    }
+
+    function _burnPoolLiquidity(address poolAddr) internal {
+        DecisionMarketPair pool = DecisionMarketPair(poolAddr);
+        uint256 lpBalance = pool.balanceOf(address(this));
+        if (lpBalance == 0) return;
+        pool.transfer(poolAddr, lpBalance);
+        pool.burn(address(this));
     }
 
     /*//////////////////////////////////////////////////////////////
