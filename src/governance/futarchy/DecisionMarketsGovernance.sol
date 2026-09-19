@@ -102,6 +102,7 @@ contract DecisionMarketsGovernance {
     error ZeroSeedAmount();
     error ProposalNotFound();
     error TradingWindowStillOpen();
+    error TradingWindowClosed();
     error AlreadyFinalized();
     error NotFinalized();
     error ProposalDidNotPass();
@@ -336,7 +337,7 @@ contract DecisionMarketsGovernance {
         uint256 minAmountOut
     ) external proposalExists(proposalId) returns (uint256 amountOut) {
         Proposal storage p = _proposals[proposalId];
-        if (block.timestamp >= p.tradingDeadline) revert TradingWindowStillOpen();
+        if (block.timestamp >= p.tradingDeadline) revert TradingWindowClosed();
 
         DecisionMarketPair pool = DecisionMarketPair(market == Market.Pass ? p.passPool : p.failPool);
         bool zeroForOne = sideIn == Side.Base;
